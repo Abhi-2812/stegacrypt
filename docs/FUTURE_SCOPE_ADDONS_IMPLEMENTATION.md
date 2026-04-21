@@ -859,3 +859,702 @@ These add-ons are now:
 - supported with starter code blocks for the most important backend pieces
 
 This guide is the safest way to move forward without destabilizing the current working demo.
+
+## 15. Copy-paste ready blocks
+
+This section is the most practical part of the guide. These blocks are written so you can copy them directly into your project with minimal editing.
+
+Important note:
+
+- these are ready-to-paste building blocks for the selected future-scope add-ons
+- they are not the full end-to-end implementation of every feature in this document
+- use them in the order shown below
+
+### 15.1 `backend/pom.xml` dependency block
+
+Paste these inside the existing `<dependencies>` section:
+
+```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.11.5</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>8.10.1</version>
+        </dependency>
+```
+
+### 15.2 `backend/src/main/resources/application.properties`
+
+Append these lines to your existing file:
+
+```properties
+# Database
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/stegacrypt}
+spring.datasource.username=${DB_USERNAME:postgres}
+spring.datasource.password=${DB_PASSWORD:postgres}
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=false
+spring.jpa.properties.hibernate.format_sql=true
+spring.flyway.enabled=true
+
+# JWT
+app.jwt.secret=${JWT_SECRET:replace-with-a-very-long-secret-key-at-least-32-chars}
+app.jwt.access-token-ms=${JWT_ACCESS_MS:3600000}
+app.jwt.refresh-token-ms=${JWT_REFRESH_MS:604800000}
+
+# Local/Cloud storage
+app.storage.mode=${STORAGE_MODE:local}
+app.storage.local-dir=${STORAGE_LOCAL_DIR:./uploads}
+
+# Mail
+spring.mail.host=${MAIL_HOST:smtp.gmail.com}
+spring.mail.port=${MAIL_PORT:587}
+spring.mail.username=${MAIL_USERNAME:}
+spring.mail.password=${MAIL_PASSWORD:}
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+
+# Actuator
+management.endpoints.web.exposure.include=health,info,prometheus
+management.endpoint.health.show-details=always
+```
+
+### 15.3 `backend/src/main/java/com/stegacrypt/storage/StorageService.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.storage;
+
+public interface StorageService {
+    String put(byte[] data, String contentType, String path) throws Exception;
+    byte[] get(String objectKey) throws Exception;
+    void delete(String objectKey) throws Exception;
+}
+```
+
+### 15.4 `backend/src/main/java/com/stegacrypt/storage/LocalStorageService.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.storage;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
+
+@Service
+public class LocalStorageService implements StorageService {
+
+    private final Path rootDir;
+
+    public LocalStorageService(@Value("${app.storage.local-dir:./uploads}") String dir) throws Exception {
+        this.rootDir = Paths.get(dir).toAbsolutePath().normalize();
+        Files.createDirectories(rootDir);
+    }
+
+    @Override
+    public String put(byte[] data, String contentType, String path) throws Exception {
+        String relativePath = path + "-" + UUID.randomUUID() + ".png";
+        Path target = rootDir.resolve(relativePath).normalize();
+        Files.createDirectories(target.getParent());
+        Files.write(target, data);
+        return relativePath.replace("\\", "/");
+    }
+
+    @Override
+    public byte[] get(String objectKey) throws Exception {
+        return Files.readAllBytes(rootDir.resolve(objectKey).normalize());
+    }
+
+    @Override
+    public void delete(String objectKey) throws Exception {
+        Files.deleteIfExists(rootDir.resolve(objectKey).normalize());
+    }
+}
+```
+
+### 15.5 `backend/src/main/java/com/stegacrypt/dto/SteganalysisScoreDto.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.dto;
+
+public record SteganalysisScoreDto(
+    int overallScore,
+    int textureScore,
+    int capacityScore,
+    int payloadPressureScore,
+    String riskLevel,
+    String recommendation
+) {}
+```
+
+### 15.6 `backend/src/main/java/com/stegacrypt/service/SteganalysisScoringService.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.service;
+
+import com.stegacrypt.dto.SteganalysisScoreDto;
+import org.springframework.stereotype.Service;
+
+import java.awt.image.BufferedImage;
+
+@Service
+public class SteganalysisScoringService {
+
+    public SteganalysisScoreDto score(BufferedImage image, int payloadBytes) {
+        int totalPixels = image.getWidth() * image.getHeight();
+        int capacityBytes = Math.max(1, (totalPixels - 64) / 8);
+        int payloadPressure = Math.min(100, (int) ((payloadBytes * 100.0) / capacityBytes));
+
+        int textureScore = estimateTextureScore(image);
+        int capacityScore = payloadPressure < 40 ? 90 : payloadPressure < 65 ? 70 : 45;
+        int payloadPressureScore = 100 - payloadPressure;
+        int overall = Math.max(0, Math.min(100, (textureScore + capacityScore + payloadPressureScore) / 3));
+
+        String riskLevel = overall >= 80 ? "LOW" : overall >= 60 ? "MEDIUM" : "HIGH";
+        String recommendation = overall >= 80
+            ? "Good carrier image for embedding."
+            : overall >= 60
+                ? "Usable, but prefer a larger or more textured image."
+                : "Risky image. Choose a more detailed image or reduce payload.";
+
+        return new SteganalysisScoreDto(
+            overall,
+            textureScore,
+            capacityScore,
+            payloadPressureScore,
+            riskLevel,
+            recommendation
+        );
+    }
+
+    private int estimateTextureScore(BufferedImage image) {
+        long totalDiff = 0;
+        int samples = 0;
+
+        for (int y = 1; y < image.getHeight(); y += 4) {
+            for (int x = 1; x < image.getWidth(); x += 4) {
+                int current = image.getRGB(x, y) & 0xFF;
+                int left = image.getRGB(x - 1, y) & 0xFF;
+                int top = image.getRGB(x, y - 1) & 0xFF;
+                totalDiff += Math.abs(current - left) + Math.abs(current - top);
+                samples += 2;
+            }
+        }
+
+        if (samples == 0) {
+            return 50;
+        }
+
+        int avg = (int) (totalDiff / samples);
+        return Math.max(20, Math.min(95, avg * 2));
+    }
+}
+```
+
+### 15.7 `backend/src/main/java/com/stegacrypt/service/SuitabilityRecommendationService.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.service;
+
+import com.stegacrypt.dto.SteganalysisScoreDto;
+import org.springframework.stereotype.Service;
+
+import java.awt.image.BufferedImage;
+
+@Service
+public class SuitabilityRecommendationService {
+
+    private final SteganalysisScoringService scoringService;
+
+    public SuitabilityRecommendationService(SteganalysisScoringService scoringService) {
+        this.scoringService = scoringService;
+    }
+
+    public SteganalysisScoreDto recommend(BufferedImage image, int payloadBytes) {
+        return scoringService.score(image, payloadBytes);
+    }
+}
+```
+
+### 15.8 `backend/src/main/java/com/stegacrypt/controller/SteganographyController.java`
+
+Add these imports:
+
+```java
+import com.stegacrypt.service.SteganalysisScoringService;
+```
+
+Add this field:
+
+```java
+    @Autowired
+    private SteganalysisScoringService steganalysisScoringService;
+```
+
+Add this endpoint inside the class:
+
+```java
+    @PostMapping("/v1/stego/score")
+    public ResponseEntity<?> scoreCarrier(
+            @RequestParam("image") MultipartFile image,
+            @RequestParam("payloadBytes") int payloadBytes) {
+
+        try {
+            BufferedImage carrierImage = imageService.loadImage(image);
+            return ResponseEntity.ok(steganalysisScoringService.score(carrierImage, payloadBytes));
+        } catch (Exception e) {
+            return buildErrorResponse("Scoring failed: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+        }
+    }
+```
+
+### 15.9 `backend/src/main/java/com/stegacrypt/entity/SessionEntity.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.entity;
+
+import jakarta.persistence.*;
+
+import java.time.Instant;
+
+@Entity
+@Table(name = "sessions")
+public class SessionEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(optional = false)
+    private UserEntity user;
+
+    @Column(nullable = false, unique = true, length = 160)
+    private String refreshTokenId;
+
+    @Column(nullable = false)
+    private Instant createdAt = Instant.now();
+
+    @Column(nullable = false)
+    private Instant expiresAt;
+
+    @Column(nullable = false)
+    private boolean revoked = false;
+
+    public Long getId() {
+        return id;
+    }
+
+    public UserEntity getUser() {
+        return user;
+    }
+
+    public void setUser(UserEntity user) {
+        this.user = user;
+    }
+
+    public String getRefreshTokenId() {
+        return refreshTokenId;
+    }
+
+    public void setRefreshTokenId(String refreshTokenId) {
+        this.refreshTokenId = refreshTokenId;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(Instant expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
+    public boolean isRevoked() {
+        return revoked;
+    }
+
+    public void setRevoked(boolean revoked) {
+        this.revoked = revoked;
+    }
+}
+```
+
+### 15.10 `frontend/src/services/api.js`
+
+If you want a copy-paste-ready upgraded version for token support plus score API, replace the current file with this:
+
+```javascript
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+
+const http = axios.create({
+  baseURL: API_BASE_URL,
+});
+
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('stegacrypt_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+class StegaCryptAPI {
+  async generateKeyPair() {
+    const response = await http.post('/generate-keys');
+    return response.data;
+  }
+
+  async embedMessage(imageFile, message, publicKey, useCompression = true) {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('message', message);
+    formData.append('publicKey', publicKey);
+    formData.append('useCompression', useCompression);
+
+    const response = await http.post('/embed', formData, {
+      responseType: 'blob',
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return response.data;
+  }
+
+  async extractMessage(imageFile, privateKey) {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('privateKey', privateKey);
+
+    const response = await http.post('/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return response.data;
+  }
+
+  async checkCapacity(imageFile) {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    const response = await http.post('/capacity', formData);
+    return response.data;
+  }
+
+  async scoreCarrierImage(imageFile, payloadBytes) {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('payloadBytes', payloadBytes);
+    const response = await http.post('/v1/stego/score', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  }
+
+  async healthCheck() {
+    const response = await http.get('/health');
+    return response.data;
+  }
+
+  async getDemoUsers() {
+    const response = await http.get('/demo-users');
+    return response.data;
+  }
+
+  async login(username, password) {
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('password', password);
+    const response = await http.post('/auth/login', formData);
+
+    if (response.data?.token) {
+      localStorage.setItem('stegacrypt_token', response.data.token);
+    }
+
+    return response.data;
+  }
+
+  async register({ fullName, username, password }) {
+    const formData = new FormData();
+    formData.append('fullName', fullName);
+    formData.append('username', username);
+    formData.append('password', password);
+    const response = await http.post('/auth/register', formData);
+
+    if (response.data?.token) {
+      localStorage.setItem('stegacrypt_token', response.data.token);
+    }
+
+    return response.data;
+  }
+
+  async getSecureChatBootstrap(token) {
+    const response = await http.get('/auth/chat', {
+      headers: token ? { 'X-Auth-Token': token } : undefined,
+    });
+    return response.data;
+  }
+
+  async sendSecureChatMessage(token, { recipientUsername, message, useCompression, imageFile }) {
+    const formData = new FormData();
+    formData.append('recipientUsername', recipientUsername);
+    formData.append('message', message);
+    formData.append('useCompression', useCompression);
+    formData.append('image', imageFile);
+
+    const response = await http.post('/auth/chat/send', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(token ? { 'X-Auth-Token': token } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async decryptSecureChatMessage(token, shareId) {
+    const response = await http.post(`/auth/chat/decrypt/${shareId}`, null, {
+      headers: token ? { 'X-Auth-Token': token } : undefined,
+    });
+    return response.data;
+  }
+
+  async getSecureChatMembers() {
+    const response = await http.get('/auth/members');
+    return response.data;
+  }
+
+  async extractSharedImage(imageFile, recipientUsername, senderUsername) {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('recipientUsername', recipientUsername);
+    if (senderUsername) {
+      formData.append('senderUsername', senderUsername);
+    }
+
+    const response = await http.post('/auth/extract-shared-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  }
+
+  logout() {
+    localStorage.removeItem('stegacrypt_token');
+  }
+
+  async getErrorMessage(error, fallbackMessage) {
+    const responseData = error?.response?.data;
+
+    if (responseData instanceof Blob) {
+      try {
+        const text = await responseData.text();
+        const parsed = JSON.parse(text);
+        return parsed.message || fallbackMessage;
+      } catch {
+        return fallbackMessage;
+      }
+    }
+
+    return responseData?.message || fallbackMessage;
+  }
+}
+
+export default new StegaCryptAPI();
+```
+
+### 15.11 `frontend/src/components/EmbedSection.jsx`
+
+Add this minimal copy-paste-ready scoring block to your component logic:
+
+```javascript
+const [carrierScore, setCarrierScore] = useState(null);
+const [scoreLoading, setScoreLoading] = useState(false);
+
+async function fetchCarrierScore(imageFile, messageText) {
+  if (!imageFile || !messageText) {
+    setCarrierScore(null);
+    return;
+  }
+
+  try {
+    setScoreLoading(true);
+    const payloadBytes = new TextEncoder().encode(messageText).length;
+    const score = await api.scoreCarrierImage(imageFile, payloadBytes);
+    setCarrierScore(score);
+  } catch (error) {
+    setCarrierScore(null);
+  } finally {
+    setScoreLoading(false);
+  }
+}
+```
+
+And render this UI block somewhere in the form:
+
+```jsx
+{scoreLoading && <p>Analyzing carrier image...</p>}
+
+{carrierScore && (
+  <div className="result-box">
+    <h3>Carrier Suitability Score</h3>
+    <p><strong>Overall Score:</strong> {carrierScore.overallScore}/100</p>
+    <p><strong>Risk Level:</strong> {carrierScore.riskLevel}</p>
+    <p><strong>Recommendation:</strong> {carrierScore.recommendation}</p>
+  </div>
+)}
+```
+
+### 15.12 `backend/src/test/java/com/stegacrypt/service/SteganalysisScoringServiceTest.java`
+
+Create this file exactly:
+
+```java
+package com.stegacrypt.service;
+
+import com.stegacrypt.dto.SteganalysisScoreDto;
+import org.junit.jupiter.api.Test;
+
+import java.awt.image.BufferedImage;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SteganalysisScoringServiceTest {
+
+    @Test
+    void scoreReturnsValidRange() {
+        BufferedImage image = new BufferedImage(300, 300, BufferedImage.TYPE_INT_ARGB);
+        SteganalysisScoringService service = new SteganalysisScoringService();
+
+        SteganalysisScoreDto dto = service.score(image, 1024);
+
+        assertTrue(dto.overallScore() >= 0 && dto.overallScore() <= 100);
+        assertNotNull(dto.riskLevel());
+        assertNotNull(dto.recommendation());
+    }
+}
+```
+
+### 15.13 Old-file edit checklist
+
+Use this checklist while pasting code:
+
+1. Update `backend/pom.xml`
+2. Update `backend/src/main/resources/application.properties`
+3. Create `storage/StorageService.java`
+4. Create `storage/LocalStorageService.java`
+5. Create `dto/SteganalysisScoreDto.java`
+6. Create `service/SteganalysisScoringService.java`
+7. Create `service/SuitabilityRecommendationService.java`
+8. Update `controller/SteganographyController.java`
+9. Create `entity/SessionEntity.java`
+10. Replace `frontend/src/services/api.js`
+11. Add score logic to `frontend/src/components/EmbedSection.jsx`
+12. Add `SteganalysisScoringServiceTest.java`
+
+### 15.14 Best copy-paste order
+
+Paste in this order so the project stays easier to fix:
+
+1. `pom.xml`
+2. `application.properties`
+3. new backend DTO/service/storage files
+4. controller changes
+5. frontend `api.js`
+6. frontend embed UI
+7. test file
+
+### 15.15 What still needs manual integration after pasting
+
+Even after pasting these blocks, you still need to:
+
+1. run Maven install to pull new dependencies
+2. create the missing DB entities and repositories if you enable JPA paths
+3. import the new service into the controller correctly
+4. add styling for the new score box in the frontend
+5. test the new `/api/v1/stego/score` endpoint manually
+6. later refactor old auth/chat flow into DB-backed services

@@ -107,6 +107,32 @@ npm run dev
 
 Open `http://localhost:3000` after both services are running.
 
+## Deploy
+
+StegaCrypt is set up to deploy as:
+
+- Frontend on Netlify
+- Backend on Render
+
+Use the included config files:
+
+- `netlify.toml` for the React/Vite frontend
+- `render.yaml` for the Spring Boot backend
+
+Before deploying the frontend, set this Netlify environment variable:
+
+```text
+VITE_API_BASE_URL=https://YOUR_RENDER_BACKEND_URL/api
+```
+
+For the backend, set or confirm this Render environment variable:
+
+```text
+FRONTEND_ORIGINS=http://localhost:3000,http://localhost:5173,https://*.netlify.app
+```
+
+The full step-by-step guide is in [Deployment Guide](docs/DEPLOYMENT.md).
+
 ## Documentation
 
 - [Quick Start](docs/QUICKSTART.md)
@@ -115,6 +141,61 @@ Open `http://localhost:3000` after both services are running.
 - [Run Guide and User Manual](docs/RUN_ME.md)
 - [Project Report](docs/PROJECT_REPORT.md)
 - [Hosting and Project Working](docs/HOSTING_AND_PROJECT_WORKING.md)
+
+## Future Functional Add-ons
+
+The following functional enhancements can be added to extend StegaCrypt further:
+
+1. Real user database storage instead of in-memory storage.
+2. JWT-based authentication.
+3. Secure password hashing with `BCrypt`.
+4. Forgot password feature.
+5. Reset password via email OTP.
+6. Email verification after registration.
+7. Role-based access control for admin and users.
+8. Real-time chat using WebSockets.
+9. Group secure messaging.
+10. Broadcast stego message to multiple recipients.
+11. Unread/read message tracking.
+12. Message delivery status.
+13. Decrypt-once messages.
+14. Self-destructing messages after timeout.
+15. Scheduled message sending.
+16. Chat search by sender, recipient, or date.
+17. Message history pagination.
+18. Export chat history.
+19. Upload and hide text files inside images.
+20. Upload and hide PDFs inside images.
+21. Upload and hide audio files inside images.
+22. Multi-file secret payload support.
+23. Batch embedding into multiple images.
+24. Batch extraction from multiple images.
+25. Multi-image payload splitting for large messages.
+26. Support for group decryption keys.
+27. Public key fingerprint verification before sending.
+28. Sender digital signatures for authenticity.
+29. Private key encryption with passphrase.
+30. Key import/export in multiple formats.
+31. QR-based public key sharing.
+32. Image capacity estimator before upload completion.
+33. Auto-select best carrier image based on payload size.
+34. Stego image integrity verification before extraction.
+35. Error correction support for damaged images.
+36. JPEG steganography support.
+37. BMP steganography support.
+38. Audio steganography support.
+39. Video steganography support.
+40. Adaptive LSB embedding based on image regions.
+41. Multiple embedding modes selectable by user.
+42. Compression mode selection before encryption.
+43. Image metadata stripping before embedding.
+44. Admin dashboard for user/share management.
+45. Audit logs for login, send, decrypt, and download events.
+46. Rate limiting for login and upload endpoints.
+47. Notification system for new secure messages.
+48. User profile management.
+49. Contact/friend list for frequent recipients.
+50. Conversation/thread view for secure chats.
 
 ## Important Notes
 
