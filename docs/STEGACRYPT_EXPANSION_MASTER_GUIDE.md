@@ -1677,3 +1677,1126 @@ You now have:
 - starter code for the highest-impact add-on topics
 
 If you want the cleanest path forward, implement this roadmap in phases and keep your current cryptography and steganography core as the engine. Most of the work now is about adding persistence, authentication, messaging architecture, file handling, and production-grade platform features around that core.
+
+## 45. File-by-file implementation manual for the current backend
+
+This section goes deeper than the roadmap. It explains what to change in each important existing backend file, why the change is needed, and how it connects to the new add-ons.
+
+### `backend/pom.xml`
+
+Purpose in current project:
+
+- defines Java version
+- defines Spring Boot dependencies
+- controls build packaging
+
+What to add:
+
+1. Add `spring-boot-starter-security` for JWT auth, BCrypt, route protection, and admin roles.
+2. Add `spring-boot-starter-data-jpa` for database persistence.
+3. Add `postgresql` driver for production-ready storage.
+4. Add `flyway-core` for versioned DB migrations.
+5. Add `spring-boot-starter-mail` for OTP and email verification.
+6. Add `spring-boot-starter-websocket` for real-time chat notifications.
+7. Add `spring-boot-starter-actuator` for health and observability.
+8. Add `micrometer-registry-prometheus` for metrics.
+9. Add JWT libraries for access token generation and parsing.
+10. Add a rate-limiting library such as Bucket4j.
+
+How to implement:
+
+1. Keep your current dependencies.
+2. Insert new dependencies in small groups, not all at once.
+3. After each group, run Maven build and fix imports before continuing.
+4. Do not introduce too many runtime systems in one commit.
+
+Best order:
+
+1. JPA + PostgreSQL + Flyway
+2. Security + JWT
+3. Mail
+4. WebSocket
+5. Actuator + metrics
+6. Rate limiting
+
+### `backend/src/main/resources/application.properties`
+
+Purpose in current project:
+
+- server port
+- upload limits
+- logging
+- CORS
+
+What to add:
+
+1. database connection properties
+2. Flyway settings
+3. JWT secret and expiry settings
+4. mail server config
+5. object storage config
+6. profile-specific flags
+7. WebSocket tuning if needed
+8. metrics and health toggles
+9. frontend origin list for multiple environments
+
+How to implement:
+
+1. Keep existing local-friendly defaults.
+2. Move secrets to environment variables.
+3. Keep only safe defaults in source control.
+4. Split later into:
+   `application.properties`
+   `application-dev.properties`
+   `application-prod.properties`
+
+Suggested additions:
+
+```properties
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/stegacrypt}
+spring.datasource.username=${DB_USERNAME:postgres}
+spring.datasource.password=${DB_PASSWORD:postgres}
+spring.jpa.hibernate.ddl-auto=validate
+spring.flyway.enabled=true
+
+app.jwt.secret=${JWT_SECRET:replace-with-very-long-secret}
+app.jwt.access-token-ms=${JWT_ACCESS_MS:3600000}
+app.jwt.refresh-token-ms=${JWT_REFRESH_MS:604800000}
+
+app.mail.from=${MAIL_FROM:no-reply@stegacrypt.local}
+
+app.storage.mode=${STORAGE_MODE:local}
+app.storage.local-dir=${STORAGE_LOCAL_DIR:./uploads}
+```
+
+### `backend/src/main/java/com/stegacrypt/StegaCryptApplication.java`
+
+Purpose in current project:
+
+- application entry point
+- CORS config
+
+What to change:
+
+1. keep it as the app bootstrap only
+2. move growing configuration out into dedicated `config` classes
+3. enable scheduling later for cleanup jobs
+4. enable async processing if you add background jobs
+
+How to implement:
+
+1. Keep `main(...)` simple.
+2. Remove large config responsibilities over time.
+3. Add annotations only when needed:
+   - `@EnableScheduling`
+   - `@EnableAsync`
+
+Suggested end state:
+
+- this file should only start the app
+- CORS should move to `CorsConfig`
+- WebSocket should move to `WebSocketConfig`
+- Security should move to `SecurityConfig`
+
+### `backend/src/main/java/com/stegacrypt/controller/SteganographyController.java`
+
+Purpose in current project:
+
+- handles general stego endpoints
+- key generation
+- embed
+- extract
+- capacity
+- health
+- demo users
+
+What to change for expansion:
+
+1. Keep existing endpoints for backward compatibility.
+2. Add versioned endpoints under `/api/v1/stego`.
+3. Split responsibilities:
+   - key endpoints into `KeyController`
+   - embed/extract into `StegoController`
+   - health into actuator or lightweight health controller
+4. Add request DTOs instead of many raw request params.
+5. Support payload type selection:
+   - text
+   - file
+   - file bundle
+6. Support embedding mode selection:
+   - randomized LSB
+   - adaptive LSB
+   - future JPEG/audio/video modes
+7. Return richer metadata:
+   - payload type
+   - embedding mode
+   - integrity status
+   - chunk info
+
+How to implement:
+
+1. First duplicate the embed/extract logic into new versioned endpoints.
+2. Replace direct inline workflow with service orchestration.
+3. Introduce a request object such as `EmbedPayloadRequest`.
+4. Add validation annotations to DTO fields.
+5. Support file-based payloads using a serialization service.
+
+Future split:
+
+- `KeyController`
+- `StegoController`
+- `BatchStegoController`
+
+### `backend/src/main/java/com/stegacrypt/controller/AuthChatController.java`
+
+Purpose in current project:
+
+- registration
+- login
+- chat bootstrap
+- send secure share
+- decrypt secure share
+- extract shared image
+
+What to change:
+
+1. Replace raw in-memory auth with JWT-secured endpoints.
+2. Replace `X-Auth-Token` with bearer auth.
+3. Split auth and chat into separate controllers.
+4. Add DTO-based request/response contracts.
+5. Add pagination to chat bootstrap or replace bootstrap with targeted APIs.
+6. Add search, read status, draft, thread, and conversation routes.
+7. Add admin-only moderation routes separately.
+
+Suggested split:
+
+- `AuthController`
+- `PasswordRecoveryController`
+- `ConversationController`
+- `MessageController`
+- `ChatShareController`
+
+How to migrate safely:
+
+1. Keep current controller working temporarily.
+2. Create `/api/v1/auth/...` and `/api/v1/chat/...`.
+3. Update frontend to new endpoints.
+4. Remove old controller only after UI migration is stable.
+
+### `backend/src/main/java/com/stegacrypt/service/AuthChatService.java`
+
+Purpose in current project:
+
+- stores users in memory
+- stores sessions in memory
+- stores shares in memory
+- hashes passwords with SHA-256
+- generates demo users
+
+This is the biggest file to refactor.
+
+What to change:
+
+1. Split auth and chat concerns apart.
+2. Remove `ConcurrentHashMap`-based persistence.
+3. Replace SHA-256 password hashing with BCrypt.
+4. Stop storing runtime tokens in map as the primary auth model.
+5. Move user creation into a real registration service.
+6. Move message persistence into repository-backed message services.
+
+Recommended service split:
+
+- `AuthService`
+- `RegistrationService`
+- `UserService`
+- `ConversationService`
+- `MessageService`
+- `ShareEncryptionService`
+- `SessionService`
+
+Detailed migration steps:
+
+1. Create `UserEntity`, `ConversationEntity`, `MessageEntity`.
+2. Create repositories for those entities.
+3. Replace `register(...)` with DB-backed save logic.
+4. Replace `login(...)` with user lookup + BCrypt verify + JWT generation.
+5. Replace `sendShare(...)` with:
+   - load sender
+   - load recipient
+   - persist conversation if missing
+   - persist message metadata
+   - save stego file to object storage or local storage
+6. Replace `getVisibleShares(...)` with paginated DB query.
+7. Move seeded user creation to a startup seeder component.
+
+### `backend/src/main/java/com/stegacrypt/service/SteganographyService.java`
+
+Purpose in current project:
+
+- core LSB embedding/extraction logic
+- payload length header handling
+- deterministic pixel sequence use
+
+What to change:
+
+1. Keep this file as the default randomized LSB strategy.
+2. Introduce `EmbeddingStrategy` interface.
+3. Rename or adapt this service to `RandomizedLsbEmbeddingStrategy`.
+4. Add checksum verification support.
+5. Add chunk metadata support for split payloads.
+6. Add mode selection support through a factory.
+
+How to implement:
+
+1. Extract the current `embedData`, `extractData`, and `getCapacityBytes` into a strategy implementation.
+2. Create a coordinator service like `StegoEngineService` that selects the strategy.
+3. Pass embedding mode from the controller to the engine.
+4. Add integrity metadata into the payload before embedding rather than changing bit logic first.
+
+Important note:
+
+Do not rewrite the low-level bit operations first. Wrap the existing working logic behind an abstraction, then add more modes.
+
+### `backend/src/main/java/com/stegacrypt/service/ImageProcessingService.java`
+
+Purpose in current project:
+
+- file validation
+- image loading
+- format conversion
+- PNG output
+
+What to change:
+
+1. Add metadata stripping support.
+2. Add optional thumbnail generation for previews.
+3. Add image fingerprint/hash support for integrity and duplicate detection.
+4. Add more file sniffing validation beyond extension.
+5. Add helper methods for batch processing and multi-image payloads.
+
+How to implement:
+
+1. Keep current validation path.
+2. Add MIME sniffing service before decode.
+3. Add metadata-safe re-encoding before output.
+4. Add preview helper methods for admin/chat UI.
+
+Suggested new helper methods:
+
+- `detectMimeType(MultipartFile file)`
+- `stripMetadata(BufferedImage image)`
+- `generatePreviewPng(byte[] imageData, int maxWidth)`
+- `computeImageHash(byte[] bytes)`
+
+### `backend/src/main/java/com/stegacrypt/service/CompressionService.java`
+
+Purpose in current project:
+
+- GZIP compress/decompress for text payloads
+
+What to change:
+
+1. Make compression payload-type aware.
+2. Support selectable compression mode.
+3. Add compression metadata to payload envelope.
+
+Suggested growth path:
+
+1. Keep GZIP as default.
+2. Add enum such as `CompressionMode`.
+3. Accept mode selection from request DTO.
+4. Return compression stats in response metadata.
+
+### `backend/src/main/java/com/stegacrypt/service/DemoUserService.java`
+
+Purpose in current project:
+
+- creates demo users with generated keys
+
+What to do:
+
+1. Keep it only for demo mode.
+2. Mark clearly as non-production in docs and config.
+3. Eventually replace it with a startup seeder using repositories.
+
+How to implement:
+
+1. Add `app.demo.seed-users=true/false`.
+2. If enabled, insert demo records only when DB is empty.
+3. Remove dependence on this service from production-only APIs.
+
+### `backend/src/main/java/com/stegacrypt/util/AESUtil.java`
+
+Purpose in current project:
+
+- hybrid encrypted payload format
+- AES-GCM encryption/decryption
+- RSA-wrapped session key
+
+What to change:
+
+1. Keep this as the main payload encryption engine.
+2. Add optional payload metadata sections:
+   - checksum
+   - signature
+   - payload type
+   - compression mode
+   - chunk metadata
+3. Add versioning carefully.
+4. Preserve backward compatibility with current payload version if possible.
+
+How to implement safely:
+
+1. Introduce a higher-level payload envelope object first.
+2. Serialize the envelope to bytes.
+3. Encrypt that serialized form.
+4. Avoid repeatedly changing raw byte offsets in a fragile way.
+
+Best approach:
+
+- current `AESUtil` should focus on encrypt/decrypt
+- payload structuring should move to a `PayloadEnvelopeService`
+
+### `backend/src/main/java/com/stegacrypt/util/RSAUtil.java`
+
+Purpose in current project:
+
+- RSA key generation
+- PEM conversion
+- session key wrapping
+- key fingerprinting
+
+What to change:
+
+1. Keep RSA support as default.
+2. Add key import/export helpers for more formats.
+3. Add support for key trust metadata.
+4. Later introduce ECC support using parallel utility classes, not by overloading this file too heavily.
+
+Suggested future split:
+
+- `RsaKeyService`
+- `PemCodecUtil`
+- `FingerprintUtil`
+- future: `EcKeyService`
+
+### `backend/src/main/java/com/stegacrypt/util/ValidationUtil.java`
+
+Purpose in current project:
+
+- validates message, keys, images, capacity
+
+What to change:
+
+1. Keep low-level validation here.
+2. Move business-rule validation into feature services.
+3. Add new validations:
+   - MIME type allow-list
+   - file count limit
+   - file bundle total size
+   - schedule time validity
+   - OTP format
+   - password strength baseline
+   - conversation export date range
+
+Rule of thumb:
+
+- technical validation stays here
+- auth/message/business validation should live closer to service layer
+
+### `backend/src/main/java/com/stegacrypt/exception/GlobalExceptionHandler.java`
+
+Purpose in current project:
+
+- converts exceptions into JSON error responses
+
+What to change:
+
+1. Standardize error format across all new APIs.
+2. Add support for:
+   - validation errors
+   - auth errors
+   - access denied
+   - rate limit exceeded
+   - file processing errors
+   - expired OTP or token
+3. Align file-size messaging with actual app limits.
+
+Suggested standard response fields:
+
+- `success`
+- `message`
+- `code`
+- `timestamp`
+- `path`
+- `details`
+
+## 46. File-by-file implementation manual for new backend files
+
+This section lists the main new files you should create and the exact job each one should do.
+
+### `config/CorsConfig.java`
+
+Create this when:
+
+- JWT auth and multiple frontend origins are introduced
+
+Responsibilities:
+
+1. centralize allowed origins
+2. centralize allowed methods and headers
+3. ensure WebSocket and REST origins stay aligned
+
+### `config/SecurityConfig.java`
+
+Responsibilities:
+
+1. disable session-based auth
+2. enable stateless JWT auth
+3. define public and protected routes
+4. define admin-only routes
+5. attach JWT filter before username-password filter
+
+Implementation steps:
+
+1. create bean for `SecurityFilterChain`
+2. permit login/register/health
+3. secure `/api/v1/**`
+4. add role restrictions for `/api/admin/**`
+
+### `config/PasswordConfig.java`
+
+Responsibilities:
+
+1. expose `PasswordEncoder`
+2. keep password hashing configuration centralized
+
+### `config/WebSocketConfig.java`
+
+Responsibilities:
+
+1. register STOMP endpoint
+2. configure broker prefixes
+3. define allowed origins
+
+### `security/JwtService.java`
+
+Responsibilities:
+
+1. generate access token
+2. generate refresh token if used
+3. parse token claims
+4. validate expiration and signature
+
+### `security/JwtAuthenticationFilter.java`
+
+Responsibilities:
+
+1. read bearer token from request
+2. validate token
+3. load user details
+4. populate Spring Security context
+
+Implementation steps:
+
+1. extend `OncePerRequestFilter`
+2. check `Authorization` header
+3. skip if header missing or invalid
+4. authenticate request when token is valid
+
+### `entity/UserEntity.java`
+
+Responsibilities:
+
+1. represent real persisted user
+2. store account state
+3. store public key and encrypted private key
+4. support relations to roles, settings, conversations
+
+### `entity/RoleEntity.java`
+
+Responsibilities:
+
+1. define roles such as `ROLE_USER`, `ROLE_ADMIN`
+2. map many-to-many with users
+
+### `entity/ConversationEntity.java`
+
+Responsibilities:
+
+1. represent a chat thread
+2. support direct chat or group chat
+3. hold last-message metadata for list views
+
+### `entity/MessageEntity.java`
+
+Responsibilities:
+
+1. represent one secure share/message
+2. link sender, recipient/group, conversation
+3. hold delivery, read, schedule, expiry, and decrypt-state metadata
+4. point to stored stego file object key
+
+### `entity/NotificationEntity.java`
+
+Responsibilities:
+
+1. store notification events
+2. support read/unread status
+3. allow page reload and history
+
+### `entity/AuditLogEntity.java`
+
+Responsibilities:
+
+1. track important security and admin events
+2. keep structured details for exports and compliance
+
+### `repository/UserRepository.java`
+
+Responsibilities:
+
+1. look up users by username/email
+2. support admin user lists
+3. support onboarding and login flows
+
+### `repository/ConversationRepository.java`
+
+Responsibilities:
+
+1. load recent conversations
+2. support conversation search and pagination
+3. find or create direct chat thread
+
+### `repository/MessageRepository.java`
+
+Responsibilities:
+
+1. query conversation messages
+2. filter by date/read state/sender
+3. support exports and scheduled jobs
+
+### `dto/*`
+
+Use DTO classes for every non-trivial API.
+
+Examples to create:
+
+- `RegisterRequest`
+- `LoginRequest`
+- `AuthResponse`
+- `EmbedRequestDto`
+- `ExtractRequestDto`
+- `ChatSendRequest`
+- `ConversationSummaryDto`
+- `MessageDto`
+- `PasswordResetRequestDto`
+- `OtpVerifyRequestDto`
+
+### `service/AuthService.java`
+
+Responsibilities:
+
+1. login
+2. refresh token
+3. logout current session
+4. logout all sessions
+
+### `service/RegistrationService.java`
+
+Responsibilities:
+
+1. validate registration inputs
+2. create key pair
+3. hash password
+4. persist user
+5. send verification email
+
+### `service/ConversationService.java`
+
+Responsibilities:
+
+1. create/find conversation
+2. list conversations with pagination
+3. update last-message metadata
+4. archive, pin, mute conversation
+
+### `service/MessageService.java`
+
+Responsibilities:
+
+1. create messages
+2. mark delivered/read/decrypted
+3. handle scheduled and expiring messages
+4. support search and export
+
+### `service/PayloadEnvelopeService.java`
+
+Responsibilities:
+
+1. convert text/file/group payloads into a structured internal envelope
+2. serialize and deserialize envelope
+3. attach metadata like payload type, compression, signature, chunk info
+
+### `service/StorageBackedShareService.java`
+
+Responsibilities:
+
+1. save generated stego image to storage
+2. load image for decrypt/download
+3. replace Base64-in-memory share storage
+
+### `storage/StorageService.java`
+
+Responsibilities:
+
+1. abstract storage backend
+2. support local disk first
+3. support cloud object storage later
+
+### `job/MessageLifecycleJob.java`
+
+Responsibilities:
+
+1. expire self-destruct messages
+2. publish scheduled messages
+3. delete expired reset tokens or temp files
+
+### `audit/AuditService.java`
+
+Responsibilities:
+
+1. record security-sensitive events
+2. expose export-ready audit entries
+3. centralize audit logging instead of sprinkling it in controllers
+
+### `notification/NotificationService.java`
+
+Responsibilities:
+
+1. create in-app notifications
+2. mark notifications read
+3. trigger WebSocket push
+4. optionally trigger email
+
+## 47. File-by-file implementation manual for the current frontend
+
+This section maps the current React files to the expansion plan.
+
+### `frontend/package.json`
+
+Purpose in current project:
+
+- defines frontend dependencies and scripts
+
+What to add:
+
+1. `react-router-dom` for pages and protected routes
+2. state/store library if desired
+3. `react-hook-form` and `zod` for safe forms
+4. `sockjs-client` and `stompjs` for chat events
+5. `react-dropzone` for batch upload UX
+6. `qrcode.react` for public key QR sharing
+7. i18n libraries for multilingual UI
+
+Implementation order:
+
+1. router + forms
+2. sockets
+3. dropzone + QR
+4. i18n
+
+### `frontend/src/services/api.js`
+
+Purpose in current project:
+
+- central API layer
+- raw Axios calls
+
+What to change:
+
+1. create a shared Axios instance
+2. attach bearer token automatically
+3. centralize 401 handling
+4. split API methods by feature area
+
+Suggested future structure:
+
+- `services/http.js`
+- `services/authApi.js`
+- `services/stegoApi.js`
+- `services/chatApi.js`
+- `services/adminApi.js`
+
+Migration steps:
+
+1. keep current class temporarily
+2. introduce shared axios instance
+3. move auth calls first
+4. move stego calls second
+5. move chat/admin calls last
+
+### `frontend/src/App.jsx`
+
+Purpose in current project:
+
+- top-level layout
+- tab switching between embed, extract, share
+
+What to change:
+
+1. replace tab-only navigation with router-based navigation
+2. keep the current landing experience as home page
+3. add protected routes
+4. add admin route shell
+5. add notification layer and toast system later
+
+Migration steps:
+
+1. create `BrowserRouter`
+2. move current tabs into separate pages
+3. map:
+   `/` to landing/home
+   `/embed` to embed page
+   `/extract` to extract page
+   `/chat` to secure chat
+4. keep current UI style during transition so the app does not feel broken
+
+### `frontend/src/App.css`
+
+Purpose in current project:
+
+- global styling for current single-screen UI
+
+What to change:
+
+1. extract reusable tokens and layout utilities
+2. add page layout styles
+3. create auth/chat/admin visual sections
+4. later split large CSS into feature-level files
+
+Recommended direction:
+
+1. keep a root theme token section
+2. create `styles/globals.css`
+3. create feature CSS files as the app grows
+
+### `frontend/src/components/EmbedSection.jsx`
+
+What to change:
+
+1. add payload type selection
+2. add file-bundle upload mode
+3. add compression mode selection
+4. add embedding mode selection
+5. add pre-upload capacity estimator
+6. add fingerprint verification view for recipient public key
+
+Implementation steps:
+
+1. keep current text embed flow working
+2. add tabs inside embed area for text and files
+3. call new capacity endpoints before final submit
+4. show result metadata and download card
+
+### `frontend/src/components/ExtractSection.jsx`
+
+What to change:
+
+1. support text payload extraction and file payload reconstruction
+2. show integrity verification
+3. show sender verification badge if signatures are enabled
+4. support chunked extraction status if multi-image mode is used
+
+### `frontend/src/components/ShareDemoSection.jsx`
+
+What to change:
+
+1. convert it from demo-only chat into a real conversation UI
+2. split sidebar, message list, composer, and details panel
+3. support pagination, read state, reactions, and replies
+4. integrate WebSocket notifications
+
+Migration steps:
+
+1. keep current demo UI as fallback
+2. create a new `ChatPage`
+3. gradually move this component's logic into feature components
+
+## 48. File-by-file implementation manual for new frontend files
+
+### `frontend/src/pages/LoginPage.jsx`
+
+Responsibilities:
+
+1. login form
+2. remember token
+3. redirect to chat or dashboard
+4. link to forgot-password
+
+### `frontend/src/pages/RegisterPage.jsx`
+
+Responsibilities:
+
+1. register form
+2. password strength display
+3. success state prompting email verification
+
+### `frontend/src/pages/ForgotPasswordPage.jsx`
+
+Responsibilities:
+
+1. collect email
+2. trigger OTP
+3. move user to OTP verification page
+
+### `frontend/src/pages/ChatPage.jsx`
+
+Responsibilities:
+
+1. load conversations
+2. load current thread messages
+3. send secure share
+4. decrypt allowed messages
+5. show notifications and presence
+
+Suggested child components:
+
+- `ConversationSidebar`
+- `MessageList`
+- `MessageComposer`
+- `MessageInspector`
+
+### `frontend/src/pages/KeysPage.jsx`
+
+Responsibilities:
+
+1. show public key fingerprint
+2. download/import/export keys
+3. show QR code for public key
+4. support passphrase-protected private key flow
+
+### `frontend/src/pages/AdminDashboardPage.jsx`
+
+Responsibilities:
+
+1. show counts for users, messages, storage, audit events
+2. link to moderation pages
+3. show charts or summaries later
+
+### `frontend/src/hooks/useAuth.js`
+
+Responsibilities:
+
+1. expose current user and token
+2. login/logout helpers
+3. token refresh if used
+
+### `frontend/src/hooks/useChatSocket.js`
+
+Responsibilities:
+
+1. connect to WebSocket
+2. subscribe to notification/message events
+3. cleanly reconnect
+
+### `frontend/src/context/AuthContext.jsx`
+
+Responsibilities:
+
+1. wrap app auth state
+2. expose login/logout
+3. persist session in storage
+
+### `frontend/src/store/chatStore.js`
+
+Responsibilities:
+
+1. keep conversations list
+2. keep current messages
+3. manage unread counters
+4. merge socket events into state
+
+## 49. Exact implementation sequence by phase and file
+
+Use this sequence if you want the least painful path through the codebase.
+
+### Phase 1: persistence foundation
+
+Files to touch:
+
+- `backend/pom.xml`
+- `backend/src/main/resources/application.properties`
+- create `entity/*`
+- create `repository/*`
+- create Flyway migration files
+
+What to finish before moving on:
+
+1. app starts successfully with DB connection
+2. Flyway runs
+3. user table exists
+4. user repository works in a simple test
+
+### Phase 2: auth replacement
+
+Files to touch:
+
+- `config/SecurityConfig.java`
+- `config/PasswordConfig.java`
+- `security/JwtService.java`
+- `security/JwtAuthenticationFilter.java`
+- `service/AuthService.java`
+- `controller/AuthController.java`
+- `frontend/src/services/api.js`
+- `frontend/src/pages/LoginPage.jsx`
+- `frontend/src/context/AuthContext.jsx`
+
+What to finish before moving on:
+
+1. register works with BCrypt
+2. login returns JWT
+3. protected endpoint requires bearer token
+4. frontend stores and reuses token
+
+### Phase 3: recovery and verification
+
+Files to touch:
+
+- mail config in properties
+- `service/EmailService.java`
+- `service/PasswordRecoveryService.java`
+- OTP and verification entities/repositories
+- forgot/reset pages
+
+What to finish before moving on:
+
+1. OTP is stored with expiry
+2. email send path works
+3. reset flow updates password hash correctly
+
+### Phase 4: conversation and message persistence
+
+Files to touch:
+
+- `entity/ConversationEntity.java`
+- `entity/MessageEntity.java`
+- `repository/ConversationRepository.java`
+- `repository/MessageRepository.java`
+- `service/ConversationService.java`
+- `service/MessageService.java`
+- `controller/ConversationController.java`
+- `controller/MessageController.java`
+- `frontend/src/pages/ChatPage.jsx`
+- `frontend/src/store/chatStore.js`
+
+What to finish before moving on:
+
+1. messages persist in DB
+2. conversation list loads with pagination
+3. chat UI can refresh without data loss
+
+### Phase 5: real-time and notifications
+
+Files to touch:
+
+- `config/WebSocketConfig.java`
+- `notification/NotificationService.java`
+- `entity/NotificationEntity.java`
+- `hooks/useChatSocket.js`
+- chat UI components
+
+What to finish before moving on:
+
+1. new share events arrive in UI live
+2. unread count updates without reload
+
+### Phase 6: payload expansion
+
+Files to touch:
+
+- `PayloadEnvelopeService.java`
+- `FilePayloadDto.java`
+- `FileValidationService.java`
+- `EmbedSection.jsx`
+- `ExtractSection.jsx`
+- upload components
+
+What to finish before moving on:
+
+1. text payload still works
+2. file payload works
+3. extraction reconstructs files correctly
+
+### Phase 7: advanced crypto and admin
+
+Files to touch:
+
+- `AESUtil.java`
+- new signature utilities
+- key management pages
+- rate limiting
+- audit services
+- admin pages
+
+What to finish before moving on:
+
+1. signature verification works
+2. audit events are recorded
+3. admin dashboard loads real data
+
+## 50. Detailed coding rules to follow while implementing this guide
+
+These rules will help you keep the project stable while expanding it.
+
+1. Do not break current embed/extract while adding v2 APIs.
+2. Introduce DTOs before introducing many new controller params.
+3. Move logic from controllers into services, not the other way around.
+4. Keep crypto utilities focused on crypto, not business rules.
+5. Keep demo-only code isolated behind flags.
+6. Add one vertical slice at a time:
+   backend model -> repository -> service -> controller -> frontend page -> test.
+7. Prefer versioned routes for large behavior changes.
+8. Add migrations for schema changes instead of relying only on auto-update.
+9. Keep new payload formats versioned from day one.
+10. Preserve backward compatibility where reasonable, especially for current text stego flow.
+
+## 51. Future Scope Coverage Check
+
+This section cross-checks the future-scope items shown in your presentation/design notes against this master guide.
+
+### Already covered in this guide
+
+- Persistent user accounts with database-backed history:
+  covered by database persistence, conversations, messages, audit logs, and search/pagination sections.
+- Cloud storage for generated stego images:
+  covered by object storage integration, signed URLs, and storage abstraction sections.
+- Supporting multiple recipients in one stego image:
+  covered by group secure messaging, broadcast sharing, and group decryption key sections.
+- Supporting other media types such as audio or video:
+  covered by file payload support and advanced audio/video steganography roadmap sections.
+- Building a mobile version of the application:
+  covered conceptually by responsive/mobile-first UI and now explicitly included as a dedicated mobile app track in the companion future-scope add-on guide.
+- Increasing automated test coverage:
+  covered by backend tests, frontend tests, e2e tests, and load testing sections.
+- Adding stronger production security and session management:
+  covered by JWT, refresh tokens, 2FA, session management, account lockout, RBAC, rate limiting, and audit logging sections.
+- Improving image suitability recommendations before embedding:
+  covered by auto-select best carrier image and AI-assisted carrier image recommendation sections.
+
+### Newly made explicit
+
+- Steganalysis resistance scoring:
+  this was previously covered only partially through adaptive embedding and steganalysis resistance ideas. It is now explicitly treated as a scored feature:
+  a backend service should calculate a carrier suitability and resistance score before embedding, and the frontend should show that score to the user before final upload.
+
+### Recommended explicit feature additions tied to this check
+
+- Add a `SteganalysisScoringService` in backend for carrier risk estimation.
+- Add a `SuitabilityRecommendationService` in backend for image ranking.
+- Add a pre-embed score panel in the frontend embed workflow.
+- Add a separate mobile-client roadmap using React Native or Flutter, while reusing the same backend APIs.
+
+For detailed file-by-file code guidance for these exact future-scope items, see:
+
+- `docs/FUTURE_SCOPE_ADDONS_IMPLEMENTATION.md`
