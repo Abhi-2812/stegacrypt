@@ -83,13 +83,9 @@ class StegaCryptAPI {
     return response.data;
   }
 
-  async sendSecureChatMessage(token, { recipientUsernames, message, useCompression, imageFile }) {
+  async sendSecureChatMessage(token, { recipientUsername, message, useCompression, imageFile }) {
     const formData = new FormData();
-
-    recipientUsernames.forEach((username) => {
-      formData.append('recipientUsernames', username);
-    });
-
+    formData.append('recipientUsername', recipientUsername);
     formData.append('message', message);
     formData.append('useCompression', useCompression);
     formData.append('image', imageFile);

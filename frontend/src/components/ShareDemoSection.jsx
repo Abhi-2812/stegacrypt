@@ -27,7 +27,7 @@ function ShareDemoSection() {
   const [members, setMembers] = useState([]);
   const [seededMembers, setSeededMembers] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [recipientUsernames, setRecipientUsernames] = useState([]);
+  const [recipientUsername, setRecipientUsername] = useState('');
   const [message, setMessage] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -41,9 +41,9 @@ function ShareDemoSection() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  const selectedRecipients = useMemo(
-    () => members.filter((member) => recipientUsernames.includes(member.username)),
-    [members, recipientUsernames]
+  const activeRecipient = useMemo(
+    () => members.find((member) => member.username === recipientUsername) || null,
+    [members, recipientUsername]
   );
 
   useEffect(() => {
@@ -97,11 +97,12 @@ function ShareDemoSection() {
       setMembers(data.members || []);
       setSeededMembers(data.seededMembers || []);
       setMessages(data.messages || []);
-      setRecipientUsernames((current) => {
+      setRecipientUsername((current) => {
         const nextMembers = data.members || [];
-        return current.filter((username) =>
-          nextMembers.some((member) => member.username === username)
-        );
+        if (current && nextMembers.some((member) => member.username === current)) {
+          return current;
+        }
+        return nextMembers[0]?.username || '';
       });
       window.localStorage.setItem(TOKEN_KEY, sessionToken);
       broadcastMemberRefresh();
@@ -166,7 +167,7 @@ function ShareDemoSection() {
     setCurrentUser(null);
     setMembers([]);
     setMessages([]);
-    setRecipientUsernames([]);
+    setRecipientUsername('');
     setImageFile(null);
     setImagePreview(null);
     broadcastMemberRefresh();
@@ -180,8 +181,8 @@ function ShareDemoSection() {
       setError('Please log in first.');
       return;
     }
-    if (recipientUsernames.length === 0) {
-      setError('Please choose at least one recipient.');
+    if (!recipientUsername) {
+      setError('Please choose a recipient.');
       return;
     }
     if (!imageFile) {
@@ -199,7 +200,7 @@ function ShareDemoSection() {
 
     try {
       await api.sendSecureChatMessage(token, {
-        recipientUsernames,
+        recipientUsername,
         message,
         useCompression,
         imageFile,
@@ -207,7 +208,7 @@ function ShareDemoSection() {
       setMessage('');
       setImageFile(null);
       setImagePreview(null);
-      setSuccess(`Secure stego message sent to ${selectedRecipients.length} recipient${selectedRecipients.length === 1 ? '' : 's'}.`);
+      setSuccess(`Secure stego message sent to ${activeRecipient?.fullName || recipientUsername}.`);
       await hydrateChat(token);
     } catch (err) {
       console.error('Send failed:', err);
@@ -353,9 +354,9 @@ function ShareDemoSection() {
       <div className="info-box subtle-box">
         <h4>Chat flow</h4>
         <ol>
-          <li>Login as one member and choose one or more registered members as recipients.</li>
+          <li>Login as one member and choose another registered member as recipient.</li>
           <li>Upload a carrier image and send the hidden message through the chat.</li>
-          <li>Each selected recipient logs in and decrypts their own stego share from the chat timeline.</li>
+          <li>The recipient logs in and decrypts the stego share from their chat timeline.</li>
         </ol>
       </div>
 
@@ -381,25 +382,18 @@ function ShareDemoSection() {
           </div>
 
           <div className="form-group">
-            <label>Recipients</label>
-            <div className="recipient-checkbox-list">
+            <label>Recipient</label>
+            <select
+              className="input"
+              value={recipientUsername}
+              onChange={(event) => setRecipientUsername(event.target.value)}
+            >
               {members.map((member) => (
-                <label key={member.username} className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={recipientUsernames.includes(member.username)}
-                    onChange={(event) => {
-                      setRecipientUsernames((current) =>
-                        event.target.checked
-                          ? [...current, member.username]
-                          : current.filter((username) => username !== member.username)
-                      );
-                    }}
-                  />
-                  <span>{member.fullName} (@{member.username})</span>
-                </label>
+                <option key={member.username} value={member.username}>
+                  {member.fullName} (@{member.username})
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div className="form-group">
@@ -414,7 +408,7 @@ function ShareDemoSection() {
               rows={6}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="Send the hidden message that should be visible only to the selected recipients."
+              placeholder="Send the hidden message that should be visible only to the selected recipient."
             />
           </div>
 
